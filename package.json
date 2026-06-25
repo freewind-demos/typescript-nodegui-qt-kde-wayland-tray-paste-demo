@@ -1,0 +1,19 @@
+{
+  "name": "typescript-nodegui-qt-kde-tray-paste-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KDE X11 托盘粘贴 demo，NodeGui + TypeScript + Qt。",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "pnpm run build && qode dist/index.js",
+    "start": "qode dist/index.js"
+  },
+  "dependencies": {
+    "@nodegui/nodegui": "^0.74.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "typescript": "^5.9.2"
+  }
+}

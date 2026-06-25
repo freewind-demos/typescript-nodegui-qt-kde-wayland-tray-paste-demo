@@ -1,0 +1,3 @@
+allowBuilds:
+  '@nodegui/nodegui': true
+  '@nodegui/qode': true
