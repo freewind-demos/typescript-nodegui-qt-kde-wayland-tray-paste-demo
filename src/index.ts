@@ -5,7 +5,6 @@ import {
   QAction,
   QApplication,
   ButtonRole,
-  QIcon,
   QMenu,
   QMessageBox,
   QPushButton,
@@ -46,13 +45,6 @@ type SocketCheck =
       reason: string;
     };
 
-const iconPathByDaemonStatus = {
-  failed: join(projectRoot, "assets/tray-icon-failed.svg"),
-  running: join(projectRoot, "assets/tray-icon-running.svg"),
-  starting: join(projectRoot, "assets/tray-icon-starting.svg"),
-  stopped: join(projectRoot, "assets/tray-icon-starting.svg"),
-} satisfies Record<DaemonStatus, string>;
-
 const ydotoolSocketPath = join(projectRoot, ".ydotool_socket");
 const pasteDelayMs = 300;
 const daemonDirectStartTimeoutMs = 3_000;
@@ -65,13 +57,6 @@ const daemonStatusText = {
   starting: "守护程序：正在启动",
   stopped: "守护程序：未运行",
 } satisfies Record<DaemonStatus, string>;
-
-const daemonStatusIcons = {
-  failed: new QIcon(iconPathByDaemonStatus.failed),
-  running: new QIcon(iconPathByDaemonStatus.running),
-  starting: new QIcon(iconPathByDaemonStatus.starting),
-  stopped: new QIcon(iconPathByDaemonStatus.stopped),
-} satisfies Record<DaemonStatus, QIcon>;
 
 let daemonStatus: DaemonStatus = "stopped";
 let daemonStartInFlight = false;
@@ -93,7 +78,7 @@ function pastePhrase(phrase: string): void {
       try {
         const pasted = await sendPasteShortcut();
         if (pasted) {
-          tray.showMessage("已粘贴", phrase, daemonStatusIcons.running, 1500);
+          tray.showMessage("已粘贴", phrase);
         }
       } catch {
         // Ignore paste shortcut errors.
@@ -326,10 +311,7 @@ function setDaemonStatus(status: DaemonStatus, detail?: string): void {
   daemonStatus = status;
 
   const text = daemonStatusText[status];
-  const icon = daemonStatusIcons[status];
   daemonStatusAction.setText(text);
-  daemonStatusAction.setIcon(icon);
-  tray.setIcon(icon);
   tray.setToolTip(
     [
       "KDE 托盘粘贴测试",
