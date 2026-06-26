@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   QAction,
   QApplication,
@@ -40,13 +39,10 @@ const clipboard = QApplication.clipboard();
 // 生成托盘图标路径。
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
 const iconPath = join(currentDir, "../assets/tray-icon.svg");
-const projectRoot = dirname(currentDir);
-const logDir = join(projectRoot, "log");
-const logFilePath = join(logDir, "paste.log");
 const userRuntimeDir = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 0}`;
 const ydotoolSocketPath = process.env.YDOTOOL_SOCKET ?? join(userRuntimeDir, "ydotoold.sock");
-const ydotooldPidFilePath = join(userRuntimeDir, "ydotoold.pid");
 const pasteDelayMs = 300;
+const pasteShortcuts = ["Shift+Insert", "Ctrl+V", "Ctrl+Shift+V"] as const;
 
 // 创建托盘图标对象。
 const trayIcon = new QIcon(iconPath);
@@ -115,17 +111,6 @@ function showError(title: string, text: string): void {
   messageBox.exec();
 }
 
-function ensureLogDir(): void {
-  mkdirSync(logDir, { recursive: true });
-}
-
-function appendLog(message: string): void {
-  ensureLogDir();
-  appendFileSync(logFilePath, `${new Date().toISOString()} ${message}\n`, {
-    encoding: "utf8",
-  });
-}
-
 function readClipboardText(): string {
   const clipboardAny = clipboard as unknown as { text?: () => string };
   return clipboardAny.text?.() ?? "";
@@ -133,7 +118,6 @@ function readClipboardText(): string {
 
 function writeClipboardText(text: string, sessionType: SessionType): void {
   if (sessionType === "wayland") {
-    appendLog(`clipboard write via wl-copy phrase=${JSON.stringify(text)}`);
     execFileSync("wl-copy", [], {
       input: text,
       stdio: ["pipe", "ignore", "ignore"],
@@ -141,7 +125,6 @@ function writeClipboardText(text: string, sessionType: SessionType): void {
     return;
   }
 
-  appendLog(`clipboard write via qt clipboard phrase=${JSON.stringify(text)}`);
   clipboard?.setText(text, QClipboardMode.Clipboard);
 }
 
@@ -195,15 +178,8 @@ function waitForSocketReady(socketPath: string, timeoutMs = 5000): boolean {
 }
 
 function ensureYdotooldRunning(): void {
-  appendLog(`ydotoold ensure requested socket=${JSON.stringify(ydotoolSocketPath)}`);
-
   if (waitForSocketReady(ydotoolSocketPath, 200)) {
-    appendLog(`ydotoold socket already ready socket=${JSON.stringify(ydotoolSocketPath)}`);
     return;
-  }
-
-  if (existsSync(ydotooldPidFilePath)) {
-    appendLog(`ydotoold pid file exists pidFile=${JSON.stringify(ydotooldPidFilePath)}`);
   }
 
   const startCommand = [
@@ -212,45 +188,14 @@ function ensureYdotooldRunning(): void {
     `setsid -f ydotoold -p ${JSON.stringify(ydotoolSocketPath)} -P 0666 >/dev/null 2>&1`,
   ];
 
-  appendLog(`ydotoold start requested command=${JSON.stringify(startCommand)}`);
-
   execFileSync("pkexec", startCommand, { stdio: "ignore" });
 
   if (!waitForSocketReady(ydotoolSocketPath, 5000)) {
-    appendLog(`ydotoold socket not ready after start socket=${JSON.stringify(ydotoolSocketPath)}`);
     showError(
       "ydotoold 启动失败",
       `已尝试自动启动 ydotoold，但 socket ${ydotoolSocketPath} 仍未就绪。`
     );
     process.exit(1);
-  }
-
-  appendLog(`ydotoold started socket=${JSON.stringify(ydotoolSocketPath)}`);
-}
-
-function getActiveWindowInfo(sessionType: SessionType): string {
-  try {
-    if (sessionType === "x11") {
-      const windowId = execFileSync("sh", ["-lc", "xdotool getwindowfocus"], {
-        encoding: "utf8",
-      }).trim();
-      const windowName = execFileSync(
-        "sh",
-        ["-lc", `xdotool getwindowname ${JSON.stringify(windowId)}`],
-        { encoding: "utf8" }
-      ).trim();
-      return `window_id=${windowId || "unknown"} window_name=${windowName || "unknown"}`;
-    }
-
-    const result = execFileSync(
-      "sh",
-      ["-lc", "printf 'wayland-session (active window query not implemented)'"],
-      { encoding: "utf8" }
-    ).trim();
-    return result || "unknown";
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `unavailable: ${message}`;
   }
 }
 
@@ -260,56 +205,31 @@ function pastePhrase(phrase: string): void {
     const sessionType = (process.env.XDG_SESSION_TYPE ?? "").toLowerCase();
     const supportedSessionType = assertSupportedSessionType(sessionType);
 
-    appendLog(
-      `trigger phrase=${JSON.stringify(phrase)} sessionType=${supportedSessionType} activeWindow=${JSON.stringify(
-        getActiveWindowInfo(supportedSessionType)
-      )}`
-    );
-
     // 先把目标句子写入标准剪贴板。
     writeClipboardText(phrase, supportedSessionType);
-    appendLog(`clipboard set phrase=${JSON.stringify(phrase)}`);
 
     // 等剪贴板内容真正稳定下来，再继续往下走。
     if (supportedSessionType === "wayland") {
       if (!waitForWaylandClipboardText(phrase)) {
-        appendLog(
-          `clipboard verify failed expected=${JSON.stringify(phrase)} actual=${JSON.stringify(readWaylandClipboardText())}`
-        );
         showError("粘贴失败", "Wayland 剪贴板内容未稳定到当前选中的文案。");
         return;
       }
     } else if (!waitForClipboardText(phrase)) {
-      appendLog(
-        `clipboard verify failed expected=${JSON.stringify(phrase)} actual=${JSON.stringify(readClipboardText())}`
-      );
       showError("粘贴失败", "剪贴板内容未稳定到当前选中的文案。");
       return;
     }
 
-    appendLog(`clipboard verify ok phrase=${JSON.stringify(phrase)} sessionType=${supportedSessionType}`);
-
     // 给系统足够时间把焦点切回目标窗口，再发粘贴快捷键。
     setTimeout(() => {
       try {
-        const activeWindowBeforePaste = getActiveWindowInfo(supportedSessionType);
-    appendLog(
-      `before paste sessionType=${supportedSessionType} activeWindow=${JSON.stringify(
-        activeWindowBeforePaste
-      )} shortcut=alt+v socket=${JSON.stringify(ydotoolSocketPath)}`
-    );
-
-        // 按当前会话类型发送原生粘贴快捷键。
+        // 依次尝试常见粘贴快捷键，兼容不同应用的默认绑定。
         sendPasteShortcut(supportedSessionType);
-        appendLog(`paste shortcut sent shortcut=alt+v sessionType=${supportedSessionType}`);
 
         // 成功后给个轻提示，便于观察是否触发。
         tray.showMessage("已粘贴", phrase, trayIcon, 1500);
-        appendLog(`paste completed phrase=${JSON.stringify(phrase)}`);
       } catch (error) {
         // 失败时展示原始错误，便于排查环境问题。
         const message = error instanceof Error ? error.message : String(error);
-        appendLog(`paste failed message=${JSON.stringify(message)}`);
         // 汇总成可读提示。
         showError("粘贴失败", message);
       }
@@ -317,7 +237,6 @@ function pastePhrase(phrase: string): void {
   } catch (error) {
     // 失败时展示原始错误，便于排查环境问题。
     const message = error instanceof Error ? error.message : String(error);
-    appendLog(`trigger failed message=${JSON.stringify(message)}`);
     // 汇总成可读提示。
     showError("粘贴失败", message);
   }
@@ -325,22 +244,31 @@ function pastePhrase(phrase: string): void {
 
 function sendPasteShortcut(sessionType: SessionType): void {
   if (sessionType === "wayland") {
-    // Wayland 下使用 ydotool 模拟 Alt+V。
-    // ydotool key 需要 keycode 序列，56 是 Left Alt，47 是 V。
-    execFileSync("ydotool", ["key", "56:1", "47:1", "47:0", "56:0"], {
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        YDOTOOL_SOCKET: ydotoolSocketPath,
-      },
-    });
+    // Wayland 下使用 ydotool 依次模拟 Shift+Insert、Ctrl+V、Ctrl+Shift+V。
+    const waylandShortcuts = [
+      ["42:1", "110:1", "110:0", "42:0"],
+      ["29:1", "47:1", "47:0", "29:0"],
+      ["29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
+    ];
+
+    for (const keys of waylandShortcuts) {
+      execFileSync("ydotool", ["key", ...keys], {
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          YDOTOOL_SOCKET: ydotoolSocketPath,
+        },
+      });
+    }
     return;
   }
 
-  // X11 下使用 xdotool。
-  execFileSync("xdotool", ["key", "--clearmodifiers", "alt+v"], {
-    stdio: "ignore"
-  });
+  // X11 下依次尝试 Shift+Insert、Ctrl+V、Ctrl+Shift+V。
+  for (const shortcut of ["Shift+Insert", "Ctrl+V", "Ctrl+Shift+V"]) {
+    execFileSync("xdotool", ["key", "--clearmodifiers", shortcut], {
+      stdio: "ignore"
+    });
+  }
 }
 
 function assertSupportedSessionType(value: string): SessionType {
