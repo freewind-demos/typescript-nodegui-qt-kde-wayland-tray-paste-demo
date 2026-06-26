@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import {
@@ -8,7 +7,6 @@ import {
   QClipboardMode,
   QIcon,
   QMenu,
-  QMessageBox,
   QSystemTrayIcon,
 } from "@nodegui/nodegui";
 
@@ -22,10 +20,6 @@ const phrases = [
 ] as const;
 
 type SessionType = "x11" | "wayland";
-
-// 当前 demo 同时服务 KDE X11 / Wayland 粘贴测试场景。
-// @why 目标是验证“点击托盘菜单后往焦点位置粘贴文本”，不同会话用不同的输入模拟工具。
-const supportedSessionTypes: SessionType[] = ["x11", "wayland"];
 
 // 取到 qode 预先创建好的 Qt 应用实例。
 const app = QApplication.instance();
@@ -42,7 +36,7 @@ const iconPath = join(currentDir, "../assets/tray-icon.svg");
 const userRuntimeDir = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 0}`;
 const ydotoolSocketPath = process.env.YDOTOOL_SOCKET ?? join(userRuntimeDir, "ydotoold.sock");
 const pasteDelayMs = 300;
-const pasteShortcuts = ["Shift+Insert", "Ctrl+V", "Ctrl+Shift+V"] as const;
+let ydotooldStarted = false;
 
 // 创建托盘图标对象。
 const trayIcon = new QIcon(iconPath);
@@ -56,228 +50,83 @@ const menu = new QMenu();
 // 保存 action 引用，防止被 GC。
 const actions: QAction[] = [];
 
-// 校验运行环境是否符合预期。
-function validateRuntime(): void {
-  // 读取当前桌面会话类型。
-  const sessionType = (process.env.XDG_SESSION_TYPE ?? "").toLowerCase();
-
-  // 若会话类型不在支持列表里，直接提示原因。
-  if (!isSupportedSessionType(sessionType)) {
-    // 弹窗说明当前限制。
-    showError(
-      "当前会话不受支持",
-      `检测到 XDG_SESSION_TYPE=${sessionType || "unknown"}。\n这个 demo 只支持 KDE X11 / Wayland。`
-    );
-    // 结束进程，避免用户误判成功。
-    process.exit(1);
-  }
-
-  // 按会话类型检查对应的输入模拟工具。
-  try {
-    if (sessionType === "wayland") {
-      // Wayland 下需要 ydotool 可用，并且程序会自动拉起 ydotoold。
-      execFileSync("sh", ["-lc", "command -v ydotool >/dev/null"], {
-        stdio: "ignore",
-      });
-      execFileSync("sh", ["-lc", "command -v pkexec >/dev/null"], {
-        stdio: "ignore",
-      });
-      ensureYdotooldRunning();
-    } else {
-      // X11 下继续确认 xdotool 在 PATH 里可解析。
-      execFileSync("sh", ["-lc", "command -v xdotool >/dev/null"], {
-        stdio: "ignore",
-      });
-    }
-  } catch {
-    const toolName = sessionType === "wayland" ? "ydotool/pkexec" : "xdotool";
-    // 缺工具时明确告诉用户怎么装。
-    showError("缺少输入工具", `请先安装 ${toolName}。`);
-    // 结束进程，避免后续点击时报错。
-    process.exit(1);
-  }
-}
-
-function isSupportedSessionType(value: string): value is SessionType {
-  return supportedSessionTypes.includes(value as SessionType);
-}
-
-// 统一错误弹窗。
-function showError(title: string, text: string): void {
-  // 使用原生消息框展示错误。
-  const messageBox = new QMessageBox();
-  messageBox.setText(title);
-  messageBox.setInformativeText(text);
-  messageBox.exec();
-}
-
-function readClipboardText(): string {
-  const clipboardAny = clipboard as unknown as { text?: () => string };
-  return clipboardAny.text?.() ?? "";
-}
-
-function writeClipboardText(text: string, sessionType: SessionType): void {
+function writePrimarySelectionText(text: string, sessionType: string): void {
   if (sessionType === "wayland") {
-    execFileSync("wl-copy", [], {
+    execFileSync("wl-copy", ["--primary"], {
       input: text,
       stdio: ["pipe", "ignore", "ignore"],
     });
     return;
   }
 
-  clipboard?.setText(text, QClipboardMode.Clipboard);
-}
-
-function readWaylandClipboardText(): string {
-  return execFileSync("wl-paste", [], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  }).trim();
-}
-
-function waitForClipboardText(expected: string, timeoutMs = 300): boolean {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (readClipboardText() === expected) {
-      return true;
-    }
-
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-  }
-
-  return false;
-}
-
-function waitForWaylandClipboardText(expected: string, timeoutMs = 300): boolean {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (readWaylandClipboardText() === expected) {
-      return true;
-    }
-
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
-  }
-
-  return false;
-}
-
-function waitForSocketReady(socketPath: string, timeoutMs = 5000): boolean {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    if (existsSync(socketPath)) {
-      return true;
-    }
-
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
-  }
-
-  return false;
-}
-
-function ensureYdotooldRunning(): void {
-  if (waitForSocketReady(ydotoolSocketPath, 200)) {
-    return;
-  }
-
-  const startCommand = [
-    "sh",
-    "-lc",
-    `setsid -f ydotoold -p ${JSON.stringify(ydotoolSocketPath)} -P 0666 >/dev/null 2>&1`,
-  ];
-
-  execFileSync("pkexec", startCommand, { stdio: "ignore" });
-
-  if (!waitForSocketReady(ydotoolSocketPath, 5000)) {
-    showError(
-      "ydotoold 启动失败",
-      `已尝试自动启动 ydotoold，但 socket ${ydotoolSocketPath} 仍未就绪。`
-    );
-    process.exit(1);
-  }
+  clipboard?.setText(text, QClipboardMode.Selection);
 }
 
 // 执行真正的“粘贴到当前焦点位置”动作。
 function pastePhrase(phrase: string): void {
   try {
     const sessionType = (process.env.XDG_SESSION_TYPE ?? "").toLowerCase();
-    const supportedSessionType = assertSupportedSessionType(sessionType);
 
-    // 先把目标句子写入标准剪贴板。
-    writeClipboardText(phrase, supportedSessionType);
-
-    // 等剪贴板内容真正稳定下来，再继续往下走。
-    if (supportedSessionType === "wayland") {
-      if (!waitForWaylandClipboardText(phrase)) {
-        showError("粘贴失败", "Wayland 剪贴板内容未稳定到当前选中的文案。");
-        return;
-      }
-    } else if (!waitForClipboardText(phrase)) {
-      showError("粘贴失败", "剪贴板内容未稳定到当前选中的文案。");
-      return;
-    }
+    // 先把目标句子写入 Shift+Insert 实际消费的 primary selection。
+    writePrimarySelectionText(phrase, sessionType);
 
     // 给系统足够时间把焦点切回目标窗口，再发粘贴快捷键。
     setTimeout(() => {
       try {
-        // 依次尝试常见粘贴快捷键，兼容不同应用的默认绑定。
-        sendPasteShortcut(supportedSessionType);
+        // 只发送一次 Shift+Insert，对应 primary selection 粘贴。
+        sendPasteShortcut(sessionType);
 
         // 成功后给个轻提示，便于观察是否触发。
         tray.showMessage("已粘贴", phrase, trayIcon, 1500);
       } catch (error) {
-        // 失败时展示原始错误，便于排查环境问题。
-        const message = error instanceof Error ? error.message : String(error);
-        // 汇总成可读提示。
-        showError("粘贴失败", message);
+        console.error(error);
       }
     }, pasteDelayMs);
   } catch (error) {
-    // 失败时展示原始错误，便于排查环境问题。
-    const message = error instanceof Error ? error.message : String(error);
-    // 汇总成可读提示。
-    showError("粘贴失败", message);
+    console.error(error);
   }
 }
 
-function sendPasteShortcut(sessionType: SessionType): void {
+function sendPasteShortcut(sessionType: string): void {
   if (sessionType === "wayland") {
-    // Wayland 下使用 ydotool 依次模拟 Shift+Insert、Ctrl+V、Ctrl+Shift+V。
-    const waylandShortcuts = [
-      ["42:1", "110:1", "110:0", "42:0"],
-      ["29:1", "47:1", "47:0", "29:0"],
-      ["29:1", "42:1", "47:1", "47:0", "42:0", "29:0"]
-    ];
-
-    for (const keys of waylandShortcuts) {
-      execFileSync("ydotool", ["key", ...keys], {
-        stdio: "ignore",
-        env: {
-          ...process.env,
-          YDOTOOL_SOCKET: ydotoolSocketPath,
-        },
-      });
-    }
+    startYdotoold();
+    // Wayland 下只模拟一次 Shift+Insert。
+    execFileSync("ydotool", ["key", "42:1", "110:1", "110:0", "42:0"], {
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        YDOTOOL_SOCKET: ydotoolSocketPath,
+      },
+    });
     return;
   }
 
-  // X11 下依次尝试 Shift+Insert、Ctrl+V、Ctrl+Shift+V。
-  for (const shortcut of ["Shift+Insert", "Ctrl+V", "Ctrl+Shift+V"]) {
-    execFileSync("xdotool", ["key", "--clearmodifiers", shortcut], {
-      stdio: "ignore"
-    });
-  }
+  // X11 下只发送一次 Shift+Insert。
+  execFileSync("xdotool", ["key", "--clearmodifiers", "Shift+Insert"], {
+    stdio: "ignore"
+  });
 }
 
-function assertSupportedSessionType(value: string): SessionType {
-  if (isSupportedSessionType(value)) {
-    return value;
+function startYdotoold(): void {
+  if (ydotooldStarted) {
+    return;
   }
 
-  // 理论上 validateRuntime 已经拦住了这里；这里保留兜底，避免运行时分支失配。
-  return "x11";
+  ydotooldStarted = true;
+
+  try {
+    execFileSync(
+      "pkexec",
+      [
+        "sh",
+        "-lc",
+        `setsid -f ydotoold -p ${JSON.stringify(ydotoolSocketPath)} -P 0666 >/dev/null 2>&1`,
+      ],
+      { stdio: "ignore" }
+    );
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 // 逐条创建托盘菜单项。
@@ -312,8 +161,7 @@ quitAction.setText("退出");
 
 // 点击后退出应用。
 quitAction.addEventListener("triggered", () => {
-  // 直接结束事件循环。
-    app.quit();
+  app.quit();
 });
 
 // 加入菜单。
@@ -321,9 +169,6 @@ menu.addAction(quitAction);
 
 // 也保留退出项引用。
 actions.push(quitAction);
-
-// 启动前做环境检查。
-validateRuntime();
 
 // 设置托盘图标。
 tray.setIcon(trayIcon);
