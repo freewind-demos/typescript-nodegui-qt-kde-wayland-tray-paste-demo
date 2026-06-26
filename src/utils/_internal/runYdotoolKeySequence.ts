@@ -1,4 +1,4 @@
-import { runCommandSync } from './runCommandSync';
+import { runCommandSync } from './runCommandSync.js';
 
 export function runYdotoolKeySequence(
   ydotoolPath: string,

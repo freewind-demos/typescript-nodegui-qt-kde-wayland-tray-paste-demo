@@ -1,19 +1,18 @@
-import { execFileSync, type StdioOptions } from "node:child_process";
+import { spawnSync, type SpawnSyncOptions, type SpawnSyncReturns } from "node:child_process";
 
 export function runCommandSync(
   command: string,
   args: string[],
-  options: {
+  options?: {
     env?: NodeJS.ProcessEnv;
     input?: string;
-    name: string;
-    stdio: ["ignore" | "pipe", "ignore" | "pipe", "ignore" | "pipe"];
+    stdio?: SpawnSyncOptions["stdio"];
   }
-): Buffer | string {
-  return execFileSync(command, args, {
+): SpawnSyncReturns<Buffer> {
+  return spawnSync(command, args, {
     encoding: "buffer",
-    env: options.env,
-    input: options.input,
-    stdio: options.stdio,
+    env: options?.env,
+    input: options?.input,
+    stdio: options?.stdio ?? ["ignore", "pipe", "pipe"],
   });
 }

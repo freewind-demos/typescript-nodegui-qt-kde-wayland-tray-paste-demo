@@ -2,7 +2,7 @@ import { spawn, type ChildProcess, type StdioOptions } from "node:child_process"
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { prepareYdotooldSocketPath } from "./_internal";
+import { prepareYdotooldSocketPath } from "./_internal/index.js";
 
 function openDaemonOutputFile(
   daemonOutputPath: string | undefined

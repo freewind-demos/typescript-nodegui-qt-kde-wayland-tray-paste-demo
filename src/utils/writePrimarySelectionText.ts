@@ -1,4 +1,4 @@
-import { runCommandSync } from './_internal';
+import { runCommandSync } from './_internal/index.js';
 
 export function writePrimarySelectionText(text: string): void {
   runCommandSync("wl-copy", ["--primary"], {

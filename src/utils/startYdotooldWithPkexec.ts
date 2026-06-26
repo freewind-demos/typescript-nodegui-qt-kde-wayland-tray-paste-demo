@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { prepareYdotooldSocketPath } from "./_internal";
+import { prepareYdotooldSocketPath } from "./_internal/index.js";
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -16,10 +16,7 @@ export function startYdotooldWithPkexec(
   prepareYdotooldSocketPath(socketPath);
 
   const outputRedirect = options.daemonOutputPath ? ` >> ${shellQuote(options.daemonOutputPath)} 2>&1` : " >/dev/null 2>&1";
-  const script = [
-    `setsid -f ${shellQuote(ydotooldPath)} -p ${shellQuote(socketPath)} -P 0666${outputRedirect}`,
-    "exit $?",
-  ].join("; ");
+  const script = [`setsid -f ${shellQuote(ydotooldPath)} -p ${shellQuote(socketPath)} -P 0666${outputRedirect}`, "exit $?"].join("; ");
   const daemonProcess = spawn(pkexecPath, ["sh", "-lc", script], {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],

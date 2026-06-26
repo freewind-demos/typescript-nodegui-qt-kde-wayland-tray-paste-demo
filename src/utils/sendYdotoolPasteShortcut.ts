@@ -1,4 +1,4 @@
-import { runYdotoolKeySequence } from './_internal';
+import { runYdotoolKeySequence } from './_internal/index.js';
 
 const   ydotoolPasteKeySequence = ["42:1", "110:1", "110:0", "42:0"] as const;
 
