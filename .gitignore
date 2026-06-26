@@ -3,3 +3,5 @@ dist
 .DS_Store
 log
 .idea/
+.ydotool_socket
+.sendpaste-ydotool.sock
