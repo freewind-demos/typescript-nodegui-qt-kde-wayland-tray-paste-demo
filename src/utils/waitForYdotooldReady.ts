@@ -1,4 +1,4 @@
-import { daemonSocketPollMs } from "./utils/_internal/index.js";
+import { daemonSocketPollMs } from "./_internal/index.js";
 import { inspectYdotooldReady } from "./inspectYdotooldReady.js";
 import type { SocketCheck } from "./inspectYdotoolSocket.js";
 

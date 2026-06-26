@@ -6,7 +6,7 @@ export function runYdotoolKeySequence(
   keySequence: readonly string[]
 ): void {
   runCommandSync(ydotoolPath, ["key", ...keySequence], {
-    env: process.env,
+    env: { ...process.env, YDOTOOL_SOCKET: socketPath },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }

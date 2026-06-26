@@ -1,6 +1,6 @@
-import { findYdotoolPath, probeYdotoolConnection, sendYdotoolPasteShortcut } from "./utils/index.js";
+import { findYdotoolPath, probeYdotoolConnection, sendYdotoolPasteShortcut } from "./index.js";
 import { inspectYdotoolSocket } from "./inspectYdotoolSocket.js";
-import { daemonSocketPath, type DaemonStatus } from "./utils/_internal/index.js";
+import { daemonSocketPath, type DaemonStatus } from "./_internal/index.js";
 import { ensureYdotooldDaemon } from "./ensureYdotooldDaemon.js";
 
 type SendPasteShortcutDeps = {

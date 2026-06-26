@@ -50,6 +50,5 @@ export function startYdotooldDirect(
     daemonOutput?.closeParentFds();
   }
 
-  daemonProcess.unref();
   return daemonProcess;
 }

@@ -11,9 +11,8 @@ import {
 import path from "path";
 import { fileURLToPath } from "url";
 import { writePrimarySelectionText } from "./utils/index.js";
-import { sendPasteShortcut } from "./sendPasteShortcut.js";
-import { ensureYdotooldDaemon } from "./ensureYdotooldDaemon.js";
-import { refreshDaemonStatus } from "./refreshDaemonStatus.js";
+import { sendPasteShortcut } from "./utils/sendPasteShortcut.js";
+import { ensureYdotooldDaemon } from "./utils/ensureYdotooldDaemon.js";
 import { daemonState, daemonStatusText, daemonSocketPath, pasteDelayMs, type DaemonStatus } from "./utils/_internal/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -137,11 +136,6 @@ tray.setContextMenu(menu);
 tray.show();
 
 void ensureYdotooldDaemon({
-  setDaemonStatus,
-});
-
-void refreshDaemonStatus({
-  ensureYdotooldDaemon: () => void ensureYdotooldDaemon({ setDaemonStatus }),
   setDaemonStatus,
 });
 

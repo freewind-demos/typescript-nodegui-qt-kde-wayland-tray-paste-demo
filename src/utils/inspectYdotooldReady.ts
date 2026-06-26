@@ -1,6 +1,6 @@
-import { probeYdotoolConnection } from "./utils/index.js";
+import { probeYdotoolConnection } from "./index.js";
 import { inspectYdotoolSocket, type SocketCheck } from "./inspectYdotoolSocket.js";
-import { daemonSocketPath } from "./utils/_internal/index.js";
+import { daemonSocketPath } from "./_internal/index.js";
 
 export async function inspectYdotooldReady(ydotoolPath: string): Promise<SocketCheck> {
   const socketCheck = inspectYdotoolSocket(daemonSocketPath);
