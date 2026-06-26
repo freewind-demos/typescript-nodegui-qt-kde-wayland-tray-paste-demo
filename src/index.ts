@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
   QAction,
   QApplication,
-  QClipboardMode,
   QIcon,
   QMenu,
   QSystemTrayIcon,
@@ -19,16 +18,11 @@ const phrases = [
   "光标停哪儿，这句话就去那儿。"
 ] as const;
 
-type SessionType = "x11" | "wayland";
-
 // 取到 qode 预先创建好的 Qt 应用实例。
 const app = QApplication.instance();
 
 // 托盘应用不依赖主窗口存活。
 app.setQuitOnLastWindowClosed(false);
-
-// 拿到系统剪贴板对象。
-const clipboard = QApplication.clipboard();
 
 // 生成托盘图标路径。
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
@@ -50,31 +44,24 @@ const menu = new QMenu();
 // 保存 action 引用，防止被 GC。
 const actions: QAction[] = [];
 
-function writePrimarySelectionText(text: string, sessionType: string): void {
-  if (sessionType === "wayland") {
-    execFileSync("wl-copy", ["--primary"], {
-      input: text,
-      stdio: ["pipe", "ignore", "ignore"],
-    });
-    return;
-  }
-
-  clipboard?.setText(text, QClipboardMode.Selection);
+function writePrimarySelectionText(text: string): void {
+  execFileSync("wl-copy", ["--primary"], {
+    input: text,
+    stdio: ["pipe", "ignore", "ignore"],
+  });
 }
 
 // 执行真正的“粘贴到当前焦点位置”动作。
 function pastePhrase(phrase: string): void {
   try {
-    const sessionType = (process.env.XDG_SESSION_TYPE ?? "").toLowerCase();
-
     // 先把目标句子写入 Shift+Insert 实际消费的 primary selection。
-    writePrimarySelectionText(phrase, sessionType);
+    writePrimarySelectionText(phrase);
 
     // 给系统足够时间把焦点切回目标窗口，再发粘贴快捷键。
     setTimeout(() => {
       try {
         // 只发送一次 Shift+Insert，对应 primary selection 粘贴。
-        sendPasteShortcut(sessionType);
+        sendPasteShortcut();
 
         // 成功后给个轻提示，便于观察是否触发。
         tray.showMessage("已粘贴", phrase, trayIcon, 1500);
@@ -87,23 +74,16 @@ function pastePhrase(phrase: string): void {
   }
 }
 
-function sendPasteShortcut(sessionType: string): void {
-  if (sessionType === "wayland") {
-    startYdotoold();
-    // Wayland 下只模拟一次 Shift+Insert。
-    execFileSync("ydotool", ["key", "42:1", "110:1", "110:0", "42:0"], {
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        YDOTOOL_SOCKET: ydotoolSocketPath,
-      },
-    });
-    return;
-  }
-
-  // X11 下只发送一次 Shift+Insert。
-  execFileSync("xdotool", ["key", "--clearmodifiers", "Shift+Insert"], {
+function sendPasteShortcut(): void {
+  startYdotoold();
+  // Wayland 下只模拟一次 Shift+Insert。
+  execFileSync("ydotool", ["key", "42:1", "110:1", "110:0", "42:0"], {
     stdio: "ignore"
+    ,
+    env: {
+      ...process.env,
+      YDOTOOL_SOCKET: ydotoolSocketPath,
+    },
   });
 }
 

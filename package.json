@@ -1,5 +1,5 @@
 {
-  "name": "typescript-nodegui-qt-kde-tray-paste-demo",
+  "name": "typescript-nodegui-qt-kde-wayland-tray-paste-demo",
   "version": "1.0.0",
   "private": true,
   "description": "KDE X11/Wayland 托盘粘贴 demo，NodeGui + TypeScript + Qt。",
