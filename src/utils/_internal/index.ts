@@ -4,3 +4,4 @@ export * from './runCommandSync.js';
 export * from './findCommandPath.js';
 export * from './daemonConstants.js';
 export * from './daemonState.js';
+export * from './sleepSync.js';

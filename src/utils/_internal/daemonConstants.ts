@@ -8,7 +8,7 @@ export const daemonSocketPollMs = 250;
 
 const __dirname = dirname(fileURLToPath(new URL(".", import.meta.url)));
 const projectRoot = dirname(__dirname);
-export const daemonSocketPath = join(projectRoot, ".ydotool_socket");
+export const daemonSocketPath = join(projectRoot, ".ydotool_sock");
 
 export const daemonStatusText = {
   failed: "守护程序：启动失败",

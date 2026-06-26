@@ -9,6 +9,7 @@ export function runCommandSync(
     stdio?: SpawnSyncOptions["stdio"];
   }
 ): SpawnSyncReturns<Buffer> {
+  console.log('### runCommandSync', { command, args, options });
   return spawnSync(command, args, {
     encoding: "buffer",
     env: options?.env,

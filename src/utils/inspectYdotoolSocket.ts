@@ -8,7 +8,10 @@ export type SocketCheck =
     };
 
 export function inspectYdotoolSocket(socketPath: string): SocketCheck {
+  console.log('### inspectYdotoolSocket', { socketPath });
   if (!existsSync(socketPath)) {
+    console.log("### 111")
+
     return {
       ok: false,
       reason: [
@@ -18,9 +21,12 @@ export function inspectYdotoolSocket(socketPath: string): SocketCheck {
     };
   }
 
+  console.log("### 222")
+
   try {
     const stats = statSync(socketPath);
     if (!stats.isSocket()) {
+      console.log("### 333")
       return {
         ok: false,
         reason: [
@@ -30,9 +36,13 @@ export function inspectYdotoolSocket(socketPath: string): SocketCheck {
       };
     }
 
+    console.log("### 444")
+
     accessSync(socketPath, constants.W_OK);
     return { ok: true };
   } catch (error) {
+    console.log("### 555")
+
     const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,

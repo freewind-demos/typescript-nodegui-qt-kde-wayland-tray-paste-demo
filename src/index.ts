@@ -40,6 +40,7 @@ actions.push(daemonStatusAction);
 menu.addSeparator();
 
 function pastePhrase(phrase: string): void {
+  console.log('### pastePhrase', { phrase });
   try {
     writePrimarySelectionText(phrase);
     setTimeout(async () => {
@@ -65,6 +66,7 @@ function pastePhrase(phrase: string): void {
 }
 
 function setDaemonStatus(status: DaemonStatus, detail?: string): void {
+  console.log('### setDaemonStatus', { status, detail });
   daemonState.status = status;
   daemonStatusAction.setText(daemonStatusText[status]);
   tray.setToolTip(
@@ -80,6 +82,7 @@ function setDaemonStatus(status: DaemonStatus, detail?: string): void {
 }
 
 function showYdotooldError(title: string, detail: string): void {
+  console.log('### showYdotooldError', { title, detail });
   const messageBox = new QMessageBox();
   messageBox.setText(title);
   messageBox.setInformativeText(
@@ -98,6 +101,7 @@ function showYdotooldError(title: string, detail: string): void {
 }
 
 function showYdotoolExecutionError(error: unknown, title: string): void {
+  console.log('### showYdotoolExecutionError', { title, error });
   const message = error instanceof Error ? error.message : String(error);
   setDaemonStatus("failed", message);
   showYdotooldError(

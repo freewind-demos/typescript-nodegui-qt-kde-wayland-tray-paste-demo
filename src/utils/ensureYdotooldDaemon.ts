@@ -8,6 +8,7 @@ type EnsureDeps = {
 };
 
 export async function ensureYdotooldDaemon(deps: EnsureDeps): Promise<void> {
+  console.log('### ensureYdotooldDaemon', { deps });
   const ydotoolPath = findYdotoolPath();
   if (!ydotoolPath) {
     deps.setDaemonStatus("failed", "系统里找不到 `ydotool`，请先安装 `ydotool`。");
@@ -20,26 +21,39 @@ export async function ensureYdotooldDaemon(deps: EnsureDeps): Promise<void> {
     return;
   }
 
-  const existingSocket = await inspectYdotooldReady(ydotoolPath);
+  const existingSocket = inspectYdotooldReady(ydotoolPath);
+  console.log("### 776 no await anymore");
+  console.log("### 777", existingSocket)
   if (existingSocket.ok) {
     deps.setDaemonStatus("running");
     return;
   }
 
+
+
+  console.log("### 778")
   deps.setDaemonStatus("starting");
+  console.log("### 779 setDaemonStatus done")
   stopYdotooldDaemon(daemonSocketPath);
+  console.log("### 780 stopYdotooldDaemon done")
 
   try {
-    startYdotooldDirect(ydotooldPath, daemonSocketPath, {
+    console.log("### 781 ABOUT TO spawn direct");
+    const proc = startYdotooldDirect(ydotooldPath, daemonSocketPath, {
       daemonOutputPath: undefined,
     });
-    const directCheck = await waitForYdotooldReady(ydotoolPath, daemonDirectStartTimeoutMs);
+    console.log("### 782 startYdotooldDirect returned", { pid: proc?.pid });
+    const directCheck = waitForYdotooldReady(ydotoolPath, daemonDirectStartTimeoutMs);
+    console.log("### 783 waitForYdotooldReady returned", { directCheck });
     if (directCheck.ok) {
       deps.setDaemonStatus("running");
       return;
     }
+    console.log("### 784 direct check failed, stopping");
     stopYdotooldDaemon(daemonSocketPath);
-  } catch {
+    console.log("### 785 stopYdotooldDaemon done, falling through to pkexec");
+  } catch (err) {
+    console.error("### 786 DIRECT START CAUGHT ERROR", err);
     // Fall through to pkexec.
   }
 
@@ -50,7 +64,7 @@ export async function ensureYdotooldDaemon(deps: EnsureDeps): Promise<void> {
   }
 
   try {
-    await startYdotooldWithPkexec(pkexecPath, ydotooldPath, daemonSocketPath, daemonPkexecStartTimeoutMs, {
+    startYdotooldWithPkexec(pkexecPath, ydotooldPath, daemonSocketPath, daemonPkexecStartTimeoutMs, {
       daemonOutputPath: undefined,
     });
   } catch (error) {
@@ -58,7 +72,7 @@ export async function ensureYdotooldDaemon(deps: EnsureDeps): Promise<void> {
     return;
   }
 
-  const pkexecCheck = await waitForYdotooldReady(ydotoolPath, daemonPkexecStartTimeoutMs);
+  const pkexecCheck = waitForYdotooldReady(ydotoolPath, daemonPkexecStartTimeoutMs);
   if (pkexecCheck.ok) {
     deps.setDaemonStatus("running");
     return;

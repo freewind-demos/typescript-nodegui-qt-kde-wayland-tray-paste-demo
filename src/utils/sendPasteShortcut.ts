@@ -11,6 +11,7 @@ type SendPasteShortcutDeps = {
 };
 
 export async function sendPasteShortcut(deps: SendPasteShortcutDeps): Promise<boolean> {
+  console.log('### sendPasteShortcut', { deps });
   const ydotoolPath = findYdotoolPath();
   if (!ydotoolPath) {
     deps.showYdotooldError("ydotool 不可用", "系统里找不到 `ydotool`，请先安装 `ydotool`。");

@@ -2,11 +2,15 @@ import { probeYdotoolConnection } from "./index.js";
 import { inspectYdotoolSocket, type SocketCheck } from "./inspectYdotoolSocket.js";
 import { daemonSocketPath } from "./_internal/index.js";
 
-export async function inspectYdotooldReady(ydotoolPath: string): Promise<SocketCheck> {
+export function inspectYdotooldReady(ydotoolPath: string): SocketCheck {
+  console.log('### inspectYdotooldReady', { ydotoolPath });
   const socketCheck = inspectYdotoolSocket(daemonSocketPath);
   if (!socketCheck.ok) {
+    console.log("### 432", socketCheck)
+    console.log("### 433 about to return");
     return socketCheck;
   }
+  console.log("### 433")
 
   try {
     probeYdotoolConnection(ydotoolPath, daemonSocketPath);
