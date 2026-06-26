@@ -41,7 +41,7 @@ pnpm run dev
 - 这个 demo 不是“直接向别的进程注入文本”，而是“先写 primary selection，再模拟 `Shift+Insert`”。
 - 所以目标输入框/编辑器本身要支持 `Shift+Insert` 从 primary selection 粘贴。
 - Wayland 下使用 `ydotool`，它依赖 `uinput`；程序启动时会先尝试直接启动自己的 `ydotoold`，失败后再通过 `pkexec` 提权启动。
-- `ydotoold` 默认使用当前项目根目录下的 `.ydotool_socket`，托盘粘贴命令也使用同一个 socket 路径；也可以通过 `YDOTOOL_SOCKET` 覆盖。
+- `ydotoold` 默认使用当前项目根目录下的 `.ydotool_socket`，托盘粘贴命令也使用同一个 socket 路径。
 - 每次真正发送 `Shift+Insert` 前，会先通过同一个 socket 发送一次单独的 `LeftCtrl` 按下/抬起，用来确认 daemon 确实可用。
 - 用 `ydotool key` 发送虚拟按键时，按键事件要按顺序一个个发，例如 `Shift` 按下、`Insert` 按下、`Insert` 抬起、`Shift` 抬起；不要把组合键当成一次整体发送，否则可能没有效果。
 - 托盘图标会显示 daemon 状态：黄色表示未运行或正在启动，绿色表示运行中，红色表示启动失败。
