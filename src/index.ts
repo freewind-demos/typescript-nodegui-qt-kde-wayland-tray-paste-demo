@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { accessSync, constants, existsSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import {
@@ -6,6 +7,9 @@ import {
   QApplication,
   QIcon,
   QMenu,
+  QClipboardMode,
+  QMessageBox,
+  QPushButton,
   QSystemTrayIcon,
 } from "@nodegui/nodegui";
 
@@ -28,9 +32,9 @@ app.setQuitOnLastWindowClosed(false);
 const currentDir = fileURLToPath(new URL(".", import.meta.url));
 const iconPath = join(currentDir, "../assets/tray-icon.svg");
 const userRuntimeDir = process.env.XDG_RUNTIME_DIR ?? `/run/user/${process.getuid?.() ?? 0}`;
-const ydotoolSocketPath = process.env.YDOTOOL_SOCKET ?? join(userRuntimeDir, "ydotoold.sock");
+const ydotoolSocketPath = process.env.YDOTOOL_SOCKET ?? join(userRuntimeDir, ".ydotool_socket");
 const pasteDelayMs = 300;
-let ydotooldStarted = false;
+const ydotooldCommand = `pkexec sh -lc 'setsid -f ydotoold -p ${JSON.stringify(ydotoolSocketPath)} -P 0666 >/dev/null 2>&1'`;
 
 // 创建托盘图标对象。
 const trayIcon = new QIcon(iconPath);
@@ -75,38 +79,124 @@ function pastePhrase(phrase: string): void {
 }
 
 function sendPasteShortcut(): void {
-  startYdotoold();
-  // Wayland 下只模拟一次 Shift+Insert。
-  execFileSync("ydotool", ["key", "42:1", "110:1", "110:0", "42:0"], {
-    stdio: "ignore"
-    ,
-    env: {
-      ...process.env,
-      YDOTOOL_SOCKET: ydotoolSocketPath,
-    },
-  });
-}
-
-function startYdotoold(): void {
-  if (ydotooldStarted) {
+  if (!isCommandAvailable("ydotoold")) {
+    showYdotooldMissingError("系统里找不到 `ydotoold`，请先安装 `ydotool`。");
     return;
   }
 
-  ydotooldStarted = true;
+  const socketCheck = inspectYdotoolSocket(ydotoolSocketPath);
+  if (!socketCheck.ok) {
+    showYdotooldMissingError(
+      socketCheck.reason ??
+        [
+          "当前没有检测到 `ydotoold` 正在运行。",
+          `当前检查的 socket 路径是：${ydotoolSocketPath}`,
+        ].join("\n")
+    );
+    return;
+  }
 
   try {
-    execFileSync(
-      "pkexec",
-      [
-        "sh",
-        "-lc",
-        `setsid -f ydotoold -p ${JSON.stringify(ydotoolSocketPath)} -P 0666 >/dev/null 2>&1`,
-      ],
-      { stdio: "ignore" }
-    );
+    // Wayland 下只模拟一次 Shift+Insert。
+    execFileSync("ydotool", ["key", "42:1", "110:1", "110:0", "42:0"], {
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        YDOTOOL_SOCKET: ydotoolSocketPath,
+      },
+    });
   } catch (error) {
-    console.error(error);
+    showYdotoolExecutionError(error);
   }
+}
+
+function inspectYdotoolSocket(socketPath: string): { ok: boolean; reason?: string } {
+  if (!existsSync(socketPath)) {
+    return {
+      ok: false,
+      reason: [
+        "当前没有检测到 `ydotoold` 的 socket。",
+        `当前检查的 socket 路径是：${socketPath}`,
+      ].join("\n"),
+    };
+  }
+
+  try {
+    const stats = statSync(socketPath);
+    if (!stats.isSocket()) {
+      return {
+        ok: false,
+        reason: [
+          "检测到的路径不是 socket。",
+          `当前检查的路径是：${socketPath}`,
+        ].join("\n"),
+      };
+    }
+
+    accessSync(socketPath, constants.W_OK);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      reason: [
+        "检测到了 `ydotoold` 的 socket，但当前用户可能没有权限正常使用它。",
+        `当前检查的 socket 路径是：${socketPath}`,
+        `错误信息：${message}`,
+      ].join("\n"),
+    };
+  }
+}
+
+function isCommandAvailable(commandName: string): boolean {
+  try {
+    execFileSync("sh", ["-lc", `command -v ${commandName} >/dev/null`], {
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showYdotooldMissingError(detail: string): void {
+  const messageBox = new QMessageBox();
+  messageBox.setText("ydotoold 启动失败");
+  messageBox.setInformativeText(
+    [
+      detail,
+      "如果想自动启动，请自行搜索 `ydotoold` 的自动启动方法。",
+      "本次执行命令：",
+      ydotooldCommand,
+      "如果没有权限访问 uinput，请使用更高权限启动。",
+    ].join("\n")
+  );
+
+  const runOnceButton = new QPushButton();
+  runOnceButton.setText("复制本次执行代码");
+  runOnceButton.addEventListener("clicked", () => {
+    copyToClipboard(ydotooldCommand);
+    messageBox.done(0);
+  });
+  messageBox.addButton(runOnceButton);
+
+  messageBox.exec();
+}
+
+function showYdotoolExecutionError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  showYdotooldMissingError(
+    [
+      "已检测到 `ydotoold` 的 socket，但 `ydotool` 执行失败。",
+      "这通常意味着 socket 存在，但权限不足，或者 `ydotoold` 没有正常工作。",
+      `错误信息：${message}`,
+    ].join("\n")
+  );
+}
+
+function copyToClipboard(text: string): void {
+  const clipboard = QApplication.clipboard();
+  clipboard?.setText(text, QClipboardMode.Clipboard);
 }
 
 // 逐条创建托盘菜单项。

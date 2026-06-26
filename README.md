@@ -20,8 +20,8 @@
 - Node.js
 - `pnpm`
 - Wayland 下还需要 `wl-copy`
-- Wayland 下还需要 `pkexec`，用于拉起 `ydotoold`
 - Wayland 下还需要 `ydotool`
+- Wayland 下还需要 `pkexec`，用于按需启动 `ydotoold`
 - NodeGui 运行所需 Qt 依赖
 
 ### 安装依赖
@@ -40,9 +40,21 @@ pnpm run dev
 
 - 这个 demo 不是“直接向别的进程注入文本”，而是“先写 primary selection，再模拟 `Shift+Insert`”。
 - 所以目标输入框/编辑器本身要支持 `Shift+Insert` 从 primary selection 粘贴。
-- Wayland 下使用 `ydotool`，它依赖 `uinput`，程序会在第一次 Wayland 粘贴时尝试拉起 `ydotoold`。
-- 如果缺少对应工具，请先安装 `wl-copy`、`pkexec` 或 `ydotool`。
+- Wayland 下使用 `ydotool`，它依赖 `uinput`；程序会检查 `$XDG_RUNTIME_DIR/.ydotool_socket` 的存在、类型和权限，没有就弹窗提示。
+- `ydotoold` 默认使用 `$XDG_RUNTIME_DIR/.ydotool_socket` 作为 socket 路径，并用 `-P 0666` 放开权限，避免当前用户无法连接。
+- 如果想让 `ydotoold` 自动启动，请自行搜索相关方法。
+- 如果弹窗里提示找不到 `ydotoold` 或 `ydotool` 执行失败，请先看本节，确认 `ydotoold`、`wl-copy`、`pkexec` 和 `ydotool` 都已安装。
 - 默认会在写入剪贴板后等待约 `300ms` 再发送粘贴快捷键。
+
+## ydotoold
+
+如果只想本次执行，可以直接运行：
+
+```bash
+pkexec sh -lc 'setsid -f ydotoold -p /run/user/1000/.ydotool_socket -P 0666 >/dev/null 2>&1'
+```
+
+把上面路径里的 `1000` 换成你自己的 uid，或者直接复制程序错误框里的本次执行命令。
 
 ## 教程
 
