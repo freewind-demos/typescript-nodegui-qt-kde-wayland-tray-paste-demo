@@ -2,16 +2,22 @@ import {
   QAction,
   QApplication,
   ButtonRole,
+  QIcon,
   QMenu,
   QMessageBox,
   QPushButton,
   QSystemTrayIcon,
 } from "@nodegui/nodegui";
+import path from "path";
+import { fileURLToPath } from "url";
 import { writePrimarySelectionText } from "./utils/index.js";
 import { sendPasteShortcut } from "./sendPasteShortcut.js";
 import { ensureYdotooldDaemon } from "./ensureYdotooldDaemon.js";
 import { refreshDaemonStatus } from "./refreshDaemonStatus.js";
 import { daemonState, daemonStatusText, daemonSocketPath, pasteDelayMs, type DaemonStatus } from "./utils/_internal/index.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const trayIconPath = path.resolve(__dirname, "..", "assets", "tray-icon.svg");
 
 const phrases = [
   "你好，KDE 托盘粘贴测试。",
@@ -126,6 +132,7 @@ menu.addAction(quitAction);
 actions.push(quitAction);
 
 setDaemonStatus("stopped");
+tray.setIcon(new QIcon(trayIconPath));
 tray.setContextMenu(menu);
 tray.show();
 
