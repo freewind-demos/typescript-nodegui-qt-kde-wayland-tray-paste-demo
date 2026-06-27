@@ -6,7 +6,7 @@
   "description": "KDE X11/Wayland 托盘粘贴 demo，NodeGui + TypeScript + Qt。",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "dev": "pnpm run build && qode dist/index.js",
     "start": "qode dist/index.js"
   },

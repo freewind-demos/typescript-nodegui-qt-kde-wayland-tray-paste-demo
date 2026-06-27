@@ -8,10 +8,10 @@ export function runCommandSync(
     input?: string;
     stdio?: SpawnSyncOptions["stdio"];
   }
-): SpawnSyncReturns<Buffer> {
+): SpawnSyncReturns<string> {
   console.log('### runCommandSync', { command, args, options });
   return spawnSync(command, args, {
-    encoding: "buffer",
+    encoding: "latin1",
     env: options?.env,
     input: options?.input,
     stdio: options?.stdio ?? ["ignore", "pipe", "pipe"],

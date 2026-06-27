@@ -7,13 +7,16 @@ import {
   QMessageBox,
   QPushButton,
   QSystemTrayIcon,
+  QSystemTrayIconActivationReason,
 } from "@nodegui/nodegui";
 import path from "path";
 import { fileURLToPath } from "url";
 import { writePrimarySelectionText } from "./utils/index.js";
-import { sendPasteShortcut } from "./utils/sendPasteShortcut.js";
-import { ensureYdotooldDaemon } from "./utils/ensureYdotooldDaemon.js";
-import { daemonState, daemonStatusText, daemonSocketPath, pasteDelayMs, type DaemonStatus } from "./utils/_internal/index.js";
+import { probeYdotoolConnection, sendYdotoolPasteShortcut, findYdotoolPath, findYdotooldPath, findPkexecPath, stopYdotooldDaemon, startYdotooldDirect, startYdotooldWithPkexec } from "./utils/index.js";
+import { inspectYdotooldReady } from "./utils/inspectYdotooldReady.js";
+import { inspectYdotoolSocket, type SocketCheck } from "./utils/inspectYdotoolSocket.js";
+import { waitForYdotooldReady } from "./utils/waitForYdotooldReady.js";
+import { daemonState, daemonStatusText, daemonSocketPath, daemonDirectStartTimeoutMs, daemonPkexecStartTimeoutMs, type DaemonStatus } from "./utils/_internal/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const trayIconPath = path.resolve(__dirname, "..", "assets", "tray-icon.svg");
@@ -43,26 +46,123 @@ function pastePhrase(phrase: string): void {
   console.log('### pastePhrase', { phrase });
   try {
     writePrimarySelectionText(phrase);
-    setTimeout(async () => {
+    // Don't block the Qt event loop - run paste shortcut in background
+    setTimeout(() => {
       try {
-        const pasted = await sendPasteShortcut({
-          ensureYdotooldDaemon: () => void ensureYdotooldDaemon({
+        const result = sendPasteShortcutSync({
+          ensureYdotooldDaemon: () => ensureYdotooldDaemonSync({
             setDaemonStatus,
           }),
           setDaemonStatus,
           showYdotoolExecutionError,
           showYdotooldError,
         });
-        if (pasted) {
-          tray.showMessage("已粘贴", phrase);
-        }
-      } catch {
-        // Ignore paste shortcut errors.
+        console.log('### pastePhrase sendPasteShortcutSync result', { result });
+      } catch (err) {
+        console.error('### pastePhrase sendPasteShortcutSync ERROR', err);
       }
-    }, pasteDelayMs);
-  } catch {
-    // Ignore paste failures.
+    });
+  } catch (err) {
+    console.error('### pastePhrase ERROR', err);
   }
+}
+
+function sendPasteShortcutSync(deps: SendPasteShortcutDeps): boolean {
+  console.log('### sendPasteShortcutSync', {});
+  const ydotoolPath = findYdotoolPath();
+  if (!ydotoolPath) {
+    deps.showYdotooldError("ydotool 不可用", "系统里找不到 `ydotool`，请先安装 `ydotool`。");
+    return false;
+  }
+
+  const socketCheck = inspectYdotoolSocket(daemonSocketPath);
+  if (!socketCheck.ok) {
+    deps.setDaemonStatus("starting", socketCheck.reason);
+    ensureYdotooldDaemonSync({ setDaemonStatus: deps.setDaemonStatus });
+    deps.showYdotooldError("ydotoold 尚未就绪", socketCheck.reason);
+    return false;
+  }
+
+  try {
+    probeYdotoolConnection(ydotoolPath, daemonSocketPath);
+  } catch (error) {
+    deps.showYdotoolExecutionError(error, "ydotool 连接测试失败");
+    return false;
+  }
+
+  deps.setDaemonStatus("running");
+  try {
+    sendYdotoolPasteShortcut(ydotoolPath, daemonSocketPath);
+    console.log('### sendPasteShortcutSync SUCCESS');
+    return true;
+  } catch (error) {
+    deps.showYdotoolExecutionError(error, "ydotool 执行失败");
+    return false;
+  }
+}
+
+type SendPasteShortcutDeps = {
+  ensureYdotooldDaemon: () => void;
+  setDaemonStatus: (status: DaemonStatus, detail?: string) => void;
+  showYdotooldError: (title: string, detail: string) => void;
+  showYdotoolExecutionError: (error: unknown, title: string) => void;
+};
+
+function ensureYdotooldDaemonSync(deps: { setDaemonStatus: (status: DaemonStatus, detail?: string) => void }): void {
+  console.log('### ensureYdotooldDaemonSync', { deps });
+  const ydotoolPath = findYdotoolPath();
+  if (!ydotoolPath) {
+    deps.setDaemonStatus("failed", "系统里找不到 `ydotool`，请先安装 `ydotool`。");
+    return;
+  }
+
+  const ydotooldPath = findYdotooldPath();
+  if (!ydotooldPath) {
+    deps.setDaemonStatus("failed", "系统里找不到 `ydotoold`，请先安装 `ydotool`。");
+    return;
+  }
+
+  const existingSocket = inspectYdotooldReady(ydotoolPath);
+  if (existingSocket.ok) {
+    deps.setDaemonStatus("running");
+    return;
+  }
+
+  deps.setDaemonStatus("starting");
+  stopYdotooldDaemon(daemonSocketPath);
+
+  try {
+    startYdotooldDirect(ydotooldPath, daemonSocketPath, { daemonOutputPath: undefined });
+    const directCheck = waitForYdotooldReady(ydotoolPath, daemonDirectStartTimeoutMs);
+    if (directCheck.ok) {
+      deps.setDaemonStatus("running");
+      return;
+    }
+    stopYdotooldDaemon(daemonSocketPath);
+  } catch {
+    // Fall through to pkexec.
+  }
+
+  const pkexecPath = findPkexecPath();
+  if (!pkexecPath) {
+    deps.setDaemonStatus("failed", "直接启动失败，且系统里找不到 `pkexec`，无法继续提权启动。");
+    return;
+  }
+
+  try {
+    startYdotooldWithPkexec(pkexecPath, ydotooldPath, daemonSocketPath, daemonPkexecStartTimeoutMs, { daemonOutputPath: undefined });
+  } catch (error) {
+    deps.setDaemonStatus("failed", error instanceof Error ? error.message : String(error));
+    return;
+  }
+
+  const pkexecCheck = waitForYdotooldReady(ydotoolPath, daemonPkexecStartTimeoutMs);
+  if (pkexecCheck.ok) {
+    deps.setDaemonStatus("running");
+    return;
+  }
+
+  deps.setDaemonStatus("failed", pkexecCheck.reason);
 }
 
 function setDaemonStatus(status: DaemonStatus, detail?: string): void {
@@ -97,7 +197,7 @@ function showYdotooldError(title: string, detail: string): void {
   okButton.setText("确定");
   messageBox.addButton(okButton, ButtonRole.AcceptRole);
 
-  messageBox.exec();
+  messageBox.open();
 }
 
 function showYdotoolExecutionError(error: unknown, title: string): void {
@@ -137,9 +237,19 @@ actions.push(quitAction);
 setDaemonStatus("stopped");
 tray.setIcon(new QIcon(trayIconPath));
 tray.setContextMenu(menu);
-tray.show();
 
-void ensureYdotooldDaemon({
+// Workaround: manually show menu on activation to bypass qode tray menu bug
+tray.addEventListener("activated", (reason: QSystemTrayIconActivationReason) => {
+  console.log('### tray activated', { reason });
+  if (reason === QSystemTrayIconActivationReason.Context || reason === QSystemTrayIconActivationReason.Trigger) {
+    menu.exec();
+  }
+});
+
+tray.show();
+console.log('### TRAY show', { visible: tray.isVisible() });
+
+void ensureYdotooldDaemonSync({
   setDaemonStatus,
 });
 
